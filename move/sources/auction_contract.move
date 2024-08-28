@@ -19,6 +19,8 @@ module auction::auction_contract {
     use aptos_framework::aptos_coin::AptosCoin;
 
     use aptos_framework::event;
+    #[test_only]
+    use aptos_std::debug::print;
 
 
     #[test_only]
@@ -81,7 +83,8 @@ module auction::auction_contract {
         created_date: u64,
         auction_ended: bool,
         auction_description_url: String,
-        num_of_bidders: u64
+        num_of_bidders: u64,
+        object_ref: Object<AuctionMetadata>
     }
 
     #[resource_group_member(group = aptos_framework::object::ObjectGroup)]
@@ -142,6 +145,7 @@ module auction::auction_contract {
                 pending_returns: smart_table::new<address, u64>(),
                 auction_description_url,
                 bidders: smart_table::new<address, u64>()
+
             }
         );
 
@@ -326,7 +330,8 @@ module auction::auction_contract {
             created_date: auction_meta_data.created_date,
             auction_ended: auction_meta_data.auction_ended,
             auction_description_url: auction_meta_data.auction_description_url,
-            num_of_bidders: smart_table::length(&auction_meta_data.bidders)
+            num_of_bidders: smart_table::length(&auction_meta_data.bidders),
+            object_ref: auction_reference
         };
         auction_details
     }
@@ -336,6 +341,19 @@ module auction::auction_contract {
         let object_address = object::object_address(&auction_reference);
         let auction_meta_data = borrow_global<AuctionMetadata>(object_address);
         smart_table::to_simple_map(&auction_meta_data.bidders)
+    }
+
+    #[view]
+    public fun get_all_auctions_details(): vector<AuctionDetails> acquires Registry, AuctionMetadata {
+       let auctions_vector_ref =  &borrow_global<Registry>(@auction).auction_objects;
+       //loop through the vector;
+        let multi_auctions_details = vector::empty<AuctionDetails>();
+        vector::for_each_ref(auctions_vector_ref, |v| {
+            //get the auction details
+           let auction_details = get_auction_details(*v);
+            vector::push_back(&mut multi_auctions_details, auction_details);
+        });
+        multi_auctions_details
     }
 
 
@@ -577,6 +595,39 @@ module auction::auction_contract {
         simple_map::length(&auction_bidders);
         assert!(simple_map::length(&auction_bidders) == 2, 1003);
     }
+
+    #[test(creator = @auction, owner_1 = @0x124,
+        owner_2 = @0x125,
+        aptos_framework = @0x1, )]
+    fun test_get_all_auction_details(creator: &signer, owner_1: &signer, owner_2: &signer, aptos_framework: &signer) acquires OwnerAuctions, Registry, AuctionMetadata, UserAuctionBid, SignerCapabilityStore
+    {
+        setup_test(creator, owner_1, owner_2, aptos_framework);
+        test_mint_aptos(creator, owner_1, owner_2);
+        let auction_brief_description = string::utf8(b"Selling the voucher drapper");
+        let auction_description_url = string::utf8(b"https//space.com");
+        create_new_auction(
+            creator,
+            auction_brief_description,
+            auction_description_url,
+            1724361612
+        );
+        create_new_auction(
+            creator,
+            auction_brief_description,
+            auction_description_url,
+            1724361612
+        );
+        //get the created auction object
+        let auction_registry = borrow_global<Registry>(@auction).auction_objects;
+        let auction_ref = vector::borrow(&auction_registry, 0);
+        make_auction_bid(owner_1, *auction_ref, 10_00000000);
+        make_auction_bid(owner_2, *auction_ref, 20_00000000);
+
+        let multi_auction_details = get_all_auctions_details();
+        print(&multi_auction_details);
+
+    }
+
 
 
 
